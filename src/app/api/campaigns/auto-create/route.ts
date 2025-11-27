@@ -6,19 +6,38 @@ export async function POST(request: Request) {
   try {
     const supabase = await createClient()
     
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Check if called from cron (with secret) or authenticated user
+    const authHeader = request.headers.get('authorization')
+    const isCronCall = authHeader === `Bearer ${process.env.CRON_SECRET}`
+    
+    let orgId: string | null = null
+    
+    if (isCronCall) {
+      // Called from cron - get orgId from body
+      const body = await request.json()
+      orgId = body.orgId
+    } else {
+      // Called by authenticated user
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError || !user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+
+      const { data: org } = await supabase
+        .from('organizations')
+        .select('id')
+        .eq('owner_id', user.id)
+        .single()
+
+      if (!org) {
+        return NextResponse.json({ error: 'Organization not found' }, { status: 404 })
+      }
+      
+      orgId = org.id
     }
 
-    const { data: org } = await supabase
-      .from('organizations')
-      .select('id')
-      .eq('owner_id', user.id)
-      .single()
-
-    if (!org) {
-      return NextResponse.json({ error: 'Organization not found' }, { status: 404 })
+    if (!orgId) {
+      return NextResponse.json({ error: 'Organization ID required' }, { status: 400 })
     }
 
     const body = await request.json()
@@ -34,7 +53,7 @@ export async function POST(request: Request) {
         due_date,
         customer:customers(id, name, email)
       `)
-      .eq('org_id', org.id)
+      .eq('org_id', orgId)
       .neq('status', 'paid')
       .neq('status', 'cancelled')
       .neq('status', 'void')
@@ -75,7 +94,7 @@ export async function POST(request: Request) {
       const { data: existingCampaigns } = await supabase
         .from('campaigns')
         .select('id')
-        .eq('org_id', org.id)
+        .eq('org_id', orgId)
         .contains('target_invoice_ids', invoiceIds.slice(0, 1)) // Check if any invoice is already in a campaign
 
       // Skip if campaign already exists
@@ -115,7 +134,7 @@ export async function POST(request: Request) {
       const { data: campaign, error } = await supabase
         .from('campaigns')
         .insert({
-          org_id: org.id,
+          org_id: orgId,
           name: campaignName,
           description: `Auto-created campaign for ${invoiceIds.length} overdue invoice(s)`,
           status: 'draft',

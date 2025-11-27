@@ -1124,36 +1124,22 @@ export default function CampaignDetailPage() {
                       <div className="space-y-3">
                         <div className="flex items-start justify-between">
                           <div>
-                            <p className="font-medium text-sm">Campaign Execution</p>
+                            <p className="font-medium text-sm">Daily Automation</p>
                             <p className="text-xs text-muted-foreground mt-1">
-                              Runs every hour to process invoices
+                              Runs daily at 9 AM UTC to process all tasks
                             </p>
                           </div>
                           <Badge variant="outline" className="font-mono text-xs">
-                            Hourly
+                            Daily
                           </Badge>
                         </div>
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <p className="font-medium text-sm">Scheduled Tasks</p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Executes follow-ups and payment checks
-                            </p>
-                          </div>
-                          <Badge variant="outline" className="font-mono text-xs">
-                            Every 5 min
-                          </Badge>
-                        </div>
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <p className="font-medium text-sm">Payment Checks</p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Verifies if invoices have been paid
-                            </p>
-                          </div>
-                          <Badge variant="outline" className="font-mono text-xs">
-                            Every 15 min
-                          </Badge>
+                        <div className="p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-lg">
+                          <p className="text-xs font-medium text-blue-900 dark:text-blue-100 mb-1">
+                            ⚡ Use "Run Now" for immediate execution
+                          </p>
+                          <p className="text-xs text-blue-700 dark:text-blue-300">
+                            The daily cron job handles: campaign execution, auto-creation, payment checks, and scheduled tasks. For faster processing, use the "Run Now" button.
+                          </p>
                         </div>
                       </div>
                     </div>
