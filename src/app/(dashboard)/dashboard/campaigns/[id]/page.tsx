@@ -35,6 +35,8 @@ import {
   Phone,
   Zap,
   Settings,
+  Play,
+  Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -65,6 +67,8 @@ export default function CampaignDetailPage() {
   const [templateSubject, setTemplateSubject] = useState('')
   const [templateBody, setTemplateBody] = useState('')
   const [showPreview, setShowPreview] = useState(false)
+  const [isRunningNow, setIsRunningNow] = useState(false)
+  const [isSendingTest, setIsSendingTest] = useState<string | null>(null)
   
   // Template customization state
   const [templateCustomization, setTemplateCustomization] = useState({
@@ -202,6 +206,68 @@ export default function CampaignDetailPage() {
     toast.success('Template updated')
     setEditingTemplate(null)
     loadCampaign()
+  }
+
+  async function handleRunNow() {
+    setIsRunningNow(true)
+    try {
+      const res = await fetch(`/api/campaigns/${campaignId}/execute`, {
+        method: 'POST',
+      })
+      
+      if (res.ok) {
+        const result = await res.json()
+        toast.success(`Campaign executed! ${result.emailsSent || 0} emails sent.`)
+        loadCampaign() // Reload to show updates
+      } else {
+        const error = await res.json()
+        toast.error(error.error || 'Failed to execute campaign')
+      }
+    } catch (error) {
+      console.error('Error executing campaign:', error)
+      toast.error('Failed to execute campaign')
+    } finally {
+      setIsRunningNow(false)
+    }
+  }
+
+  async function handleSendTestEmail(templateId: string) {
+    setIsSendingTest(templateId)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user?.email) {
+        toast.error('No email address found')
+        return
+      }
+
+      const template = campaign?.templates.find(t => t.id === templateId)
+      if (!template) {
+        toast.error('Template not found')
+        return
+      }
+
+      const res = await fetch('/api/email/test-template', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          templateId,
+          campaignId,
+          to: user.email,
+        }),
+      })
+
+      if (res.ok) {
+        toast.success(`Test email sent to ${user.email}`)
+      } else {
+        const error = await res.json()
+        toast.error(error.error || 'Failed to send test email')
+      }
+    } catch (error) {
+      console.error('Error sending test email:', error)
+      toast.error('Failed to send test email')
+    } finally {
+      setIsSendingTest(null)
+    }
   }
 
   function renderEmailPreview() {
@@ -795,13 +861,33 @@ export default function CampaignDetailPage() {
                                     <Eye className="h-4 w-4 text-muted-foreground" />
                                     <Label className="text-base font-semibold">Preview</Label>
                                   </div>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setShowPreview(!showPreview)}
-                                  >
-                                    {showPreview ? 'Hide' : 'Show'} Preview
-                                  </Button>
+                                  <div className="flex gap-2">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => setShowPreview(!showPreview)}
+                                    >
+                                      {showPreview ? 'Hide' : 'Show'} Preview
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleSendTestEmail(template.id)}
+                                      disabled={isSendingTest === template.id}
+                                    >
+                                      {isSendingTest === template.id ? (
+                                        <>
+                                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                          Sending...
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Send className="h-4 w-4 mr-2" />
+                                          Send Test
+                                        </>
+                                      )}
+                                    </Button>
+                                  </div>
                                 </div>
                                 {showPreview && renderEmailPreview()}
                               </div>
@@ -1008,27 +1094,89 @@ export default function CampaignDetailPage() {
 
                 {/* Campaign Schedule */}
                 <div className="space-y-4 border-t pt-6">
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-5 w-5 text-primary" />
-                    <h3 className="text-lg font-semibold">Campaign Schedule</h3>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-5 w-5 text-primary" />
+                      <h3 className="text-lg font-semibold">Campaign Schedule</h3>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={handleRunNow}
+                      disabled={isRunningNow || campaign.status !== 'active'}
+                    >
+                      {isRunningNow ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Running...
+                        </>
+                      ) : (
+                        <>
+                          <Play className="h-4 w-4 mr-2" />
+                          Run Now
+                        </>
+                      )}
+                    </Button>
                   </div>
                   
-                  <div className="pl-7 space-y-3">
-                    {campaign.config?.stages?.map((stage, index) => (
-                      <div key={index} className="p-4 border rounded-lg">
-                        <div className="flex items-center justify-between">
+                  {/* Cron Schedule Info */}
+                  <div className="pl-7 space-y-4">
+                    <div className="p-4 border rounded-lg bg-muted/50">
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between">
                           <div>
-                            <p className="font-medium capitalize">{stage.stage.replace('_', ' ')}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {stage.daysTrigger === 0 
-                                ? 'Immediately' 
-                                : `After ${stage.daysTrigger} days`} · {stage.tone} tone
+                            <p className="font-medium text-sm">Campaign Execution</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Runs every hour to process invoices
                             </p>
                           </div>
-                          <Badge variant="outline">{stage.tone}</Badge>
+                          <Badge variant="outline" className="font-mono text-xs">
+                            Hourly
+                          </Badge>
+                        </div>
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="font-medium text-sm">Scheduled Tasks</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Executes follow-ups and payment checks
+                            </p>
+                          </div>
+                          <Badge variant="outline" className="font-mono text-xs">
+                            Every 5 min
+                          </Badge>
+                        </div>
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="font-medium text-sm">Payment Checks</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Verifies if invoices have been paid
+                            </p>
+                          </div>
+                          <Badge variant="outline" className="font-mono text-xs">
+                            Every 15 min
+                          </Badge>
                         </div>
                       </div>
-                    ))}
+                    </div>
+
+                    {/* Campaign Stages */}
+                    <div className="space-y-3">
+                      <p className="text-sm font-medium text-muted-foreground">Email Stages:</p>
+                      {campaign.config?.stages?.map((stage, index) => (
+                        <div key={index} className="p-4 border rounded-lg">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-medium capitalize">{stage.stage.replace('_', ' ')}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {stage.daysTrigger === 0 
+                                  ? 'Immediately' 
+                                  : `After ${stage.daysTrigger} days`} · {stage.tone} tone
+                              </p>
+                            </div>
+                            <Badge variant="outline">{stage.tone}</Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
